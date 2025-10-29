@@ -4,12 +4,21 @@ import altair as alt # 用於繪製圖表
 import os
 import numpy as np
 
-# --- 1. 設定 ---
+# --- 1. 頁面設定 (Page Config) ---
+# *** 關鍵修復：st.set_page_config 必須是第一個 Streamlit 指令 ***
+st.set_page_config(
+    page_title="張信哲 (Jeff Chang) 歌詞與音樂分析",
+    page_icon="🎵",
+    layout="wide",
+)
+
+# --- 2. 檔案路徑設定 ---
 DATA_FILE_A = 'Jeff_Chang_Ultimate_Master_File.csv'
 DATA_FILE_B = 'Jeff_Chang_AI_Lyrical_Analysis.csv'
 AI_COLS = ['track_name', 'album_title', 'ai_theme', 'ai_sentiment', 'ai_notes']
 
-# --- 2. 載入資料 (已更新) ---
+# --- 3. 輔助函式 (Helper Functions) ---
+
 @st.cache_data  # 快取資料以提高效能
 def load_data():
     """
@@ -21,7 +30,11 @@ def load_data():
         st.info(f"請確認 {DATA_FILE_A} 檔案與 dashboard.py 位於同一資料夾中。")
         return None
     
-    df_ultimate = pd.read_csv(DATA_FILE_A, low_memory=False)
+    try:
+        df_ultimate = pd.read_csv(DATA_FILE_A, low_memory=False)
+    except Exception as e:
+        st.error(f"載入 {DATA_FILE_A} 時發生錯誤: {e}")
+        return None
     
     # 標準化 'track_name' 和 'album_title' 以便合併
     for col in ['track_name', 'album_title']:
@@ -59,10 +72,6 @@ def load_data():
         st.info(f"AI 分析檔案 ({DATA_FILE_B}) 未上傳。AI 相關功能將被禁用。")
         st.session_state['ai_available'] = False
         return df_ultimate
-
-# --- ★★★ 錯誤修復 ★★★ ---
-# 我們將繪圖函式的定義移到這裡
-# 這樣 main() 函式在呼叫它們時就能找到了
 
 @st.cache_data
 def plot_categorical_chart(df, column, title, top_n=15):
@@ -114,32 +123,19 @@ def plot_histogram(df, column, title, bin_count=10):
     ).interactive()
     return chart
 
-# --- 3. 儀表板主要應用程式 ---
-
+# --- 4. 儀表板主要應用程式 ---
 def main():
-    # 設定頁面為寬螢幕模式
-    # *** 關鍵修復：st.set_page_config 必須是第一個被呼叫的 Streamlit 指令 ***
-    # 我們將它移到 main() 函數的 *外部*，放在所有 import 之後
-    pass # 保持 main() 函數的結構，但 set_page_config 已移出
-
-# *** 關鍵修AFix 1: st.set_page_config 必須是第一個 Streamlit 指令 ***
-st.set_page_config(
-    page_title="張信哲 (Jeff Chang) 歌詞與音樂分析",
-    page_icon="🎵",
-    layout="wide",
-)
-
-def main():
+    
     # 載入資料
     df = load_data()
 
-    # --- 3a. 處理資料載入失敗 ---
+    # --- 4a. 處理資料載入失敗 ---
     if df is None:
         st.title("張信哲 (Jeff Chang) AI 歌詞分析儀表板")
         st.error("資料載入失敗，請檢查終端機中的錯誤訊息。")
         return # *** 這裡的 return 是在 main() 函數中，所以是合法的 ***
 
-    # --- 3b. 成功的資料載入 ---
+    # --- 4b. 成功的資料載入 ---
     
     # --- 側邊欄導航 (Sidebar) ---
     st.sidebar.title("導航 (Navigation)")
@@ -156,9 +152,9 @@ def main():
         index=0  # 預設顯示主儀表板
     )
 
-    # --- 4. 頁面邏輯 ---
+    # --- 5. 頁面邏輯 ---
 
-    # --- 4a. 如果沒有選擇歌曲 -> 顯示主儀表板 ---
+    # --- 5a. 如果沒有選擇歌曲 -> 顯示主儀表板 ---
     if selected_song == '[ 主儀表板 (General Dashboard) ]':
         st.title("張信哲 (Jeff Chang) AI 歌詞分析儀表板")
         
@@ -265,7 +261,7 @@ def main():
             if chart_dance:
                 st.altair_chart(chart_dance, use_container_width=True)
         
-    # --- 4b. 如果選擇了歌曲 -> 顯示全新的「單曲分析頁面」 ---
+    # --- 5b. 如果選擇了歌曲 -> 顯示全新的「單曲分析頁面」 ---
     else:
         # 獲取被選中歌曲的資料
         song_data_list = df[df['display_name'] == selected_song]
