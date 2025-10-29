@@ -58,19 +58,26 @@ def load_data():
                     on=['track_name', 'album_title'],
                     how='left'
                 )
+                # 建立一個 'has_ai_analysis' 欄位
+                df_merged['has_ai_analysis'] = df_merged['ai_theme'].notna() & (~df_merged['ai_theme'].isin(['SKIPPED', 'ERROR']))
                 st.session_state['ai_available'] = True 
                 return df_merged
             else:
                 st.warning(f"AI 分析檔案 ({DATA_FILE_B}) 已找到，但缺少必要欄位 (例如 'ai_theme')。AI 分析將不可用。")
+                df_ultimate['has_ai_analysis'] = False # 確保欄位存在
                 st.session_state['ai_available'] = False
                 return df_ultimate
         except Exception as e:
             st.error(f"載入 AI 分析檔案 ({DATA_FILE_B}) 時出錯: {e}")
+            df_ultimate['has_ai_analysis'] = False # 確保欄位存在
             st.session_state['ai_available'] = False
             return df_ultimate
     else:
+        # 如果 AI 檔案不存在，設定一個標記
+        if 'ai_available' not in st.session_state:
+             st.session_state['ai_available'] = False
         st.info(f"AI 分析檔案 ({DATA_FILE_B}) 未上傳。AI 相關功能將被禁用。")
-        st.session_state['ai_available'] = False
+        df_ultimate['has_ai_analysis'] = False # 確保欄位存在
         return df_ultimate
 
 @st.cache_data
@@ -85,8 +92,8 @@ def plot_categorical_chart(df, column, title, top_n=15):
     # 針對 key_key 進行特殊處理 (將數字 0-11 轉換為音名)
     if column == 'key_key':
         key_map = {
-            0: 'C', 1: 'C#', 2: 'D', 3: 'D#', 4: 'E', 5: 'F',
-            6: 'F#', 7: 'G', 8: 'G#', 9: 'A', 10: 'A#', 11: 'B'
+            0.0: 'C', 1.0: 'C#', 2.0: 'D', 3.0: 'D#', 4.0: 'E', 5.0: 'F',
+            6.0: 'F#', 7.0: 'G', 8.0: 'G#', 9.0: 'A', 10.0: 'A#', 11.0: 'B'
         }
         # .get(x, pd.NA) 確保如果值不在 map 中 (例如 NaN)，它會被設為 pd.NA
         data[column] = data[column].apply(lambda x: key_map.get(x, pd.NA))
@@ -142,8 +149,29 @@ def main():
     st.sidebar.markdown("從下方選擇一首歌曲以查看詳細分析。若不選擇，將顯示主儀表板。")
     
     # 建立一個包含 "瀏覽所有歌曲" 選項的歌曲列表
+    if 'track_name' not in df.columns:
+        df['track_name'] = 'N/A' # 處理 track_name 缺失的罕見情況
+    if 'album_title' not in df.columns:
+        df['album_title'] = 'N/A' # 處理 album_title 缺失的罕見情況
+        
     df['display_name'] = df['track_name'].fillna('N/A') + " | " + df['album_title'].fillna('N/A')
-    song_list = ['[ 主儀表板 (General Dashboard) ]'] + sorted(df['display_name'].unique())
+    
+    # *** ★★★ 需求更新：排序邏輯 ★★★ ***
+    # 1. 根據 'has_ai_analysis' 降序 (True 在前)
+    # 2. 根據 'display_name' 升序 (字母順序)
+    if 'has_ai_analysis' not in df.columns:
+        df['has_ai_analysis'] = False # 確保欄位存在
+        
+    df_sorted_for_list = df.sort_values(
+        by=['has_ai_analysis', 'display_name'],
+        ascending=[False, True]
+    )
+    
+    # 從已排序的 DataFrame 中獲取唯一的 display_name，這會保留優先順序
+    sorted_unique_names = df_sorted_for_list['display_name'].unique().tolist()
+    
+    # 建立最終列表
+    song_list = ['[ 主儀表板 (General Dashboard) ]'] + sorted_unique_names
     
     # 歌曲選擇器
     selected_song = st.sidebar.selectbox(
@@ -160,13 +188,14 @@ def main():
         
         # 取得統計數據
         total_songs = len(df)
-        songs_with_lyrics = df['lyrics_text'].notna().sum()
-        songs_with_ai = 0
+        songs_with_lyrics = 0
+        if 'lyrics_text' in df.columns:
+            songs_with_lyrics = df['lyrics_text'].notna().sum()
         
-        if st.session_state.get('ai_available', False) and 'ai_theme' in df.columns:
+        songs_with_ai = 0
+        if st.session_state.get('ai_available', False) and 'has_ai_analysis' in df.columns:
             # 確保只計算非空、非錯誤的 AI 分析
-            songs_with_ai = df['ai_theme'].notna() & (~df['ai_theme'].isin(['SKIPPED', 'ERROR']))
-            songs_with_ai = songs_with_ai.sum()
+            songs_with_ai = (df['has_ai_analysis'] == True).sum()
 
         st.info(f"已載入 {total_songs} 筆資料。 | {songs_with_lyrics} 筆包含歌詞。 | {songs_with_ai} 筆已成功獲得 AI 分析。")
         
@@ -176,8 +205,7 @@ def main():
         
         # 只有在 AI 可用時才顯示圖表
         if st.session_state.get('ai_available', False) and 'ai_theme' in df.columns:
-            df_analyzed = df.dropna(subset=['ai_theme', 'ai_sentiment'])
-            df_analyzed = df_analyzed[~df_analyzed['ai_theme'].isin(['SKIPPED', 'ERROR'])]
+            df_analyzed = df[df['has_ai_analysis'] == True]
             
             if not df_analyzed.empty:
                 with col1:
@@ -228,7 +256,7 @@ def main():
                 st.altair_chart(chart_genre, use_container_width=True)
         
         with chart_col2:
-            # *** 這裡呼叫函式 ***
+            # *** G這裡呼叫函式 ***
             chart_scale = plot_categorical_chart(df, 'key_scale', '音樂調式 (大/小調)')
             if chart_scale:
                 st.altair_chart(chart_scale, use_container_width=True)
@@ -236,13 +264,8 @@ def main():
         with chart_col3:
             df_key = df.copy()
             if 'key_key' in df_key.columns:
-                key_map = {
-                    0: 'C', 1: 'C#', 2: 'D', 3: 'D#', 4: 'E', 5: 'F',
-                    6: 'F#', 7: 'G', 8: 'G#', 9: 'A', 10: 'A#', 11: 'B'
-                }
-                df_key['key_name'] = df_key['key_key'].map(key_map)
                 # *** 這裡呼叫函式 ***
-                chart_key = plot_categorical_chart(df_key, 'key_name', '歌曲調性 (Key) 分佈', top_n=12)
+                chart_key = plot_categorical_chart(df_key, 'key_key', '歌曲調性 (Key) 分佈', top_n=12)
                 if chart_key:
                     st.altair_chart(chart_key, use_container_width=True)
 
@@ -256,8 +279,7 @@ def main():
                 st.altair_chart(chart_party, use_container_width=True)
             
         with chart_col5:
-            # *** 這裡呼叫函式 ***
-            chart_dance = plot_histogram(df, 'danceability', '舞蹈指數 (Danceability)')
+            # *** chart_dance = plot_histogram(df, 'danceability', '舞蹈指數 (Danceability)')
             if chart_dance:
                 st.altair_chart(chart_dance, use_container_width=True)
         
@@ -332,7 +354,7 @@ def main():
             other_fields_with_data = other_fields.dropna()
             
             if not other_fields_with_data.empty:
-                # 顯示為一個漂亮的 "欄位名 | 值" 列表
+                # 顯示為一個漂亮的 "dataframe" (舊版為 st.json)
                 st.dataframe(other_fields_with_data, use_container_width=True)
             else:
                 st.info("此歌曲沒有其他可用的 (Tonal/AcousticBrainz) 資料。")
