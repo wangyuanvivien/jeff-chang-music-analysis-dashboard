@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt 
 import os
 import numpy as np
+from pathlib import Path
 
 # --- 1. 頁面設定 (Page Config) ---
 st.set_page_config(
@@ -12,24 +13,25 @@ st.set_page_config(
 )
 
 # --- 2. 檔案路徑設定 ---
-# *** 關鍵變更：只讀取一個檔案 ***
-DATA_FILE = 'Jeff_Chang_Final_Master_Dashboard_Data.csv'
+DATA_FILE_NAME = 'Jeff_Chang_Final_Master_Dashboard_Data.csv'
 AI_COLS = ['ai_theme', 'ai_sentiment', 'ai_notes']
 
 # --- 3. 輔助函式 (Helper Functions) ---
 
-@st.cache_data
+@st.cache_data(show_spinner=True) # 載入時顯示轉圈圈，提高使用者體驗
 def load_data():
-    """
-    載入單一的主儀表板資料檔案。
-    """
-    if not os.path.exists(DATA_FILE):
-        st.error(f"致命錯誤：找不到儀表板主資料檔案: {DATA_FILE}")
-        st.info(f"請確認您已在本地運行 'merge_ultimate_master_final.py' 並將 {DATA_FILE} 上傳至 GitHub。")
+    """ 載入單一的主儀表板資料檔案。 """
+    
+    # 建立檔案路徑 (使用 Path(__file__).parent 處理 Streamlit 伺服器路徑問題)
+    DATA_FILE = Path(__file__).parent / DATA_FILE_NAME
+    
+    if not DATA_FILE.exists():
+        st.error(f"致命錯誤：找不到儀表板主資料檔案: {DATA_FILE_NAME}")
+        st.info(f"請確認 {DATA_FILE_NAME} 檔案已上傳至 GitHub。")
         return None
     
     try:
-        df = pd.read_csv(DATA_FILE, encoding='utf-8-sig', low_memory=False)
+        df = pd.read_csv(str(DATA_FILE), encoding='utf-8-sig', low_memory=False)
         
         # 檢查 AI 欄位是否存在，設置狀態標記
         if all(col in df.columns for col in AI_COLS):
@@ -38,14 +40,13 @@ def load_data():
             st.session_state['ai_available'] = True
         else:
             df['has_ai_analysis'] = False
-            # 只有在初次運行時顯示警告
             if 'ai_available' not in st.session_state:
                 st.warning("AI 分析資料欄位不存在。請確保已運行最終合併腳本並上傳了正確的檔案。")
             st.session_state['ai_available'] = False
 
         return df
     except Exception as e:
-        st.error(f"載入 {DATA_FILE} 時發生錯誤: {e}")
+        st.error(f"載入 {DATA_FILE_NAME} 時發生嚴重錯誤，請檢查檔案內容和編碼: {e}")
         return None
 
 @st.cache_data
@@ -132,7 +133,7 @@ def main():
     # --- 5. 頁面邏輯 ---
 
     if selected_song == '[ 主儀表板 (General Dashboard) ]':
-        st.title("張信哲 (Jeff Chang) AI 歌詞分析儀表板 v1.4 [單一來源]")
+        st.title("張信哲 (Jeff Chang) AI 歌詞分析儀表板 v1.6 [最終穩定版]") # 更新版本號
         
         # 統計數據
         total_songs = len(df)
@@ -271,3 +272,4 @@ def main():
 # --- 6. 執行 Main ---
 if __name__ == "__main__":
     main()
+
